@@ -1,0 +1,103 @@
+
+
+# Step 1: Import Required Libraries
+import pandas as pd
+import random
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
+
+# Step 2: Generate Synthetic Feedback Dataset (1000+ entries)
+academics_phrases = [
+    "The teaching style is very interactive and engaging.",
+    "Professors are always late to class which affects the schedule.",
+    "The syllabus is outdated and needs revision.",
+    "Lectures are well structured and easy to understand.",
+    "Assignment load is high and affects conceptual clarity.",
+    "The exam paper was poorly set and out of syllabus.",
+    "The lectures lack real-world examples and practical relevance.",
+    "Academic staff are supportive and available for doubt-solving.",
+    "Online classes are disorganized and poorly managed.",
+    "Lecture halls are equipped but not used effectively."
+]
+
+facilities_phrases = [
+    "Wi-Fi in the campus is very poor.",
+    "Library hours are too limited for serious study.",
+    "The hostel food is not hygienic and repetitive.",
+    "Labs are clean but lack updated equipment.",
+    "The sports facilities are well maintained and accessible.",
+    "The canteen menu lacks healthy options.",
+    "There are not enough books in the library.",
+    "The AC in the classrooms is often not working.",
+    "Washrooms are unclean and poorly maintained.",
+    "The campus infrastructure needs modernization."
+]
+
+admin_phrases = [
+    "Admin office rarely responds to student queries on time.",
+    "Getting documents signed takes forever.",
+    "The exam registration portal crashes frequently.",
+    "No proper information is given about holidays and schedules.",
+    "Admin staff are uncooperative and rude.",
+    "Grievance redressal system is ineffective.",
+    "Orientation for new students was poorly planned.",
+    "Too much delay in issuing certificates.",
+    "There is no communication about fees deadlines.",
+    "Administrative processes are very slow and outdated."
+]
+
+# Generate dataset
+feedback_lines = []
+labels = []
+
+for _ in range(334):  # 334 * 3 ≈ 1002 entries
+    feedback_lines.append(random.choice(academics_phrases))
+    labels.append("Academics")
+    feedback_lines.append(random.choice(facilities_phrases))
+    labels.append("Facilities")
+    feedback_lines.append(random.choice(admin_phrases))
+    labels.append("Administration")
+
+# Create DataFrame
+df = pd.DataFrame({
+    "Feedback": feedback_lines,
+    "Label": labels
+})
+
+# Step 3: Preprocess Data and Train the Model
+X = df['Feedback']
+y = df['Label']
+
+# TF-IDF Vectorization
+vectorizer = TfidfVectorizer()
+X_vect = vectorizer.fit_transform(X)
+
+# Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(X_vect, y, test_size=0.2, random_state=42)
+
+# Train Logistic Regression Model
+model = LogisticRegression()
+model.fit(X_train, y_train)
+
+
+
+# Step 4: Function to Classify New Feedback
+def classify_user_feedback(feedback_text):
+    text_vect = vectorizer.transform([feedback_text])
+    prediction = model.predict(text_vect)
+    return prediction[0]
+
+# Step 5: Take Input from User
+test_feedback = input("📩 Enter your feedback: ")
+predicted_category = classify_user_feedback(test_feedback)
+
+# Output the Result
+print("\n📌 Predicted Department:", predicted_category)
+print("🙏 Thank you for your feedback! We will notify the", predicted_category, "department to take necessary action.")
+
+# Step 6: Save Dataset with Predictions
+df["Predicted"] = model.predict(X_vect)
+df.to_csv("classified_feedback.csv", index=False)
+
