@@ -29,7 +29,7 @@ This project is a Python-based classifier that helps educational institutions au
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/your-username/college-feedback-classifier.git
+git clone https://github.com/Devesh-Chowdary/college-feedback-classifier.git
 cd college-feedback-classifier
 ```
 
