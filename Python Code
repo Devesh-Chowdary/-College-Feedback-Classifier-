@@ -1,103 +1,166 @@
+from google.colab import files
+
+# Upload both files (train and test)
+uploaded = files.upload()
 
 
-# Step 1: Import Required Libraries
+
 import pandas as pd
-import random
+import numpy as np
+import re
+import string
+import nltk
+import spacy
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 
-# Step 2: Generate Synthetic Feedback Dataset (1000+ entries)
-academics_phrases = [
-    "The teaching style is very interactive and engaging.",
-    "Professors are always late to class which affects the schedule.",
-    "The syllabus is outdated and needs revision.",
-    "Lectures are well structured and easy to understand.",
-    "Assignment load is high and affects conceptual clarity.",
-    "The exam paper was poorly set and out of syllabus.",
-    "The lectures lack real-world examples and practical relevance.",
-    "Academic staff are supportive and available for doubt-solving.",
-    "Online classes are disorganized and poorly managed.",
-    "Lecture halls are equipped but not used effectively."
-]
+# Download required NLTK data
+nltk.download('stopwords')
+nltk.download('wordnet')
+from nltk.corpus import stopwords
 
-facilities_phrases = [
-    "Wi-Fi in the campus is very poor.",
-    "Library hours are too limited for serious study.",
-    "The hostel food is not hygienic and repetitive.",
-    "Labs are clean but lack updated equipment.",
-    "The sports facilities are well maintained and accessible.",
-    "The canteen menu lacks healthy options.",
-    "There are not enough books in the library.",
-    "The AC in the classrooms is often not working.",
-    "Washrooms are unclean and poorly maintained.",
-    "The campus infrastructure needs modernization."
-]
+# Load English tokenizer, POS tagger, lemmatizer, etc.
+nlp = spacy.load("en_core_web_sm")
+stop_words = set(stopwords.words('english'))
 
-admin_phrases = [
-    "Admin office rarely responds to student queries on time.",
-    "Getting documents signed takes forever.",
-    "The exam registration portal crashes frequently.",
-    "No proper information is given about holidays and schedules.",
-    "Admin staff are uncooperative and rude.",
-    "Grievance redressal system is ineffective.",
-    "Orientation for new students was poorly planned.",
-    "Too much delay in issuing certificates.",
-    "There is no communication about fees deadlines.",
-    "Administrative processes are very slow and outdated."
-]
+# -------------------------------
+# Preprocessing Function
+# -------------------------------
+def preprocess_text(text):
+    if pd.isnull(text):
+        return ""
+    # Lowercase
+    text = text.lower()
+    # Remove punctuation and numbers
+    text = re.sub(f'[{re.escape(string.punctuation)}0-9]', ' ', text)
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Tokenize, remove stopwords, and lemmatize
+    doc = nlp(text)
+    tokens = [
+        token.lemma_
+        for token in doc
+        if token.text not in stop_words and not token.is_punct and not token.is_space
+    ]
+    return ' '.join(tokens)
 
-# Generate dataset
-feedback_lines = []
-labels = []
+# -------------------------------
+# Rule-based Keyword Categorizer
+# -------------------------------
+def keyword_category(feedback):
+    feedback = feedback.lower()
+    if any(word in feedback for word in ["faculty", "lecture", "professor", "lab", "class", "notes", "exam"]):
+        return "Academics"
+    elif any(word in feedback for word in ["hostel", "mess", "food", "bathroom", "room", "cleaned"]):
+        return "Hostel & Mess"
+    elif any(word in feedback for word in ["admin", "office", "documents", "approval", "staff", "processing"]):
+        return "Administration"
+    elif any(word in feedback for word in ["gym", "sports", "fest", "event", "club", "drama", "dance"]):
+        return "Extracurricular"
+    elif any(word in feedback for word in ["wifi", "ac", "air conditioner", "library", "equipment", "fan"]):
+        return "Facilities"
+    else:
+        return "Uncategorized"
 
-for _ in range(334):  # 334 * 3 ≈ 1002 entries
-    feedback_lines.append(random.choice(academics_phrases))
-    labels.append("Academics")
-    feedback_lines.append(random.choice(facilities_phrases))
-    labels.append("Facilities")
-    feedback_lines.append(random.choice(admin_phrases))
-    labels.append("Administration")
+# -------------------------------
+# Load Data
+# -------------------------------
+train_df = pd.read_csv('college_feedback_train.csv')
+test_df = pd.read_csv('college_feedback_test.csv')
 
-# Create DataFrame
-df = pd.DataFrame({
-    "Feedback": feedback_lines,
-    "Label": labels
-})
+# Ensure consistent column naming
+train_df.rename(columns={'Feedback': 'feedback'}, inplace=True)
+test_df.rename(columns={'Feedback': 'feedback'}, inplace=True)
 
-# Step 3: Preprocess Data and Train the Model
-X = df['Feedback']
-y = df['Label']
+# Add category if not present
+if 'category' not in train_df.columns:
+    if 'Label' in train_df.columns:
+        train_df.rename(columns={'Label': 'category'}, inplace=True)
+    else:
+        train_df['category'] = train_df['feedback'].apply(keyword_category)
 
-# TF-IDF Vectorization
+# -------------------------------
+# Preprocess Feedback Text
+# -------------------------------
+print("Preprocessing text... this might take a minute.")
+train_df['clean_feedback'] = train_df['feedback'].apply(preprocess_text)
+test_df['clean_feedback'] = test_df['feedback'].apply(preprocess_text)
+
+# -------------------------------
+# Feature Extraction
+# -------------------------------
 vectorizer = TfidfVectorizer()
-X_vect = vectorizer.fit_transform(X)
+X = vectorizer.fit_transform(train_df['clean_feedback'])
+y = train_df['category']
 
-# Train-Test Split
-X_train, X_test, y_train, y_test = train_test_split(X_vect, y, test_size=0.2, random_state=42)
+# Split for validation
+X_train, X_val, y_train, y_val = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
 
-# Train Logistic Regression Model
-model = LogisticRegression()
-model.fit(X_train, y_train)
+# -------------------------------
+# Train Model
+# -------------------------------
+clf = LogisticRegression(max_iter=300, random_state=42)
+clf.fit(X_train, y_train)
 
+# -------------------------------
+# Validation Results
+# -------------------------------
+y_pred_val = clf.predict(X_val)
+print("\nClassification Report (Validation):")
+print(classification_report(y_val, y_pred_val))
 
+cm = confusion_matrix(y_val, y_pred_val, labels=clf.classes_)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clf.classes_)
+fig, ax = plt.subplots(figsize=(8, 6))
+disp.plot(ax=ax, cmap="Blues")
+plt.title("Confusion Matrix - Validation Set")
+plt.tight_layout()
+plt.show()
 
-# Step 4: Function to Classify New Feedback
-def classify_user_feedback(feedback_text):
-    text_vect = vectorizer.transform([feedback_text])
-    prediction = model.predict(text_vect)
-    return prediction[0]
+# -------------------------------
+# Predict on Test Data
+# -------------------------------
+X_test = vectorizer.transform(test_df['clean_feedback'])
+test_df['predicted_category'] = clf.predict(X_test)
 
-# Step 5: Take Input from User
-test_feedback = input("📩 Enter your feedback: ")
-predicted_category = classify_user_feedback(test_feedback)
+# Save results
+output_file = 'classified_feedback_output.csv'
+test_df.to_csv(output_file, index=False)
+print(f"\n✅ Test predictions saved to '{output_file}'.")
 
-# Output the Result
-print("\n📌 Predicted Department:", predicted_category)
-print("🙏 Thank you for your feedback! We will notify the", predicted_category, "department to take necessary action.")
+# -------------------------------
+# Visualize Category Distribution
+# -------------------------------
+plt.figure(figsize=(7, 4))
+sns.countplot(
+    x='predicted_category',
+    data=test_df,
+    order=test_df['predicted_category'].value_counts().index
+)
+plt.title("Predicted Feedback Category Distribution (Test Set)")
+plt.xticks(rotation=30)
+plt.tight_layout()
+plt.show()
 
-# Step 6: Save Dataset with Predictions
-df["Predicted"] = model.predict(X_vect)
-df.to_csv("classified_feedback.csv", index=False)
+# -------------------------------
+# Interactive Feedback Prediction
+# -------------------------------
+while True:
+    user_feedback = input("\nEnter a feedback message (or type 'exit' to quit): ")
+    if user_feedback.lower() == 'exit':
+        print("Exiting program.")
+        break
 
+    cleaned = preprocess_text(user_feedback)
+    vectorized = vectorizer.transform([cleaned])
+    prediction = clf.predict(vectorized)[0]
+    print(f"Predicted Category: 🎯 {prediction}")
+
+output = pd.read_csv('classified_feedback_output.csv')
+output.head(50)
